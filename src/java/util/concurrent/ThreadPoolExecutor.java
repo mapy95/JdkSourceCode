@@ -378,16 +378,17 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
      * that workerCount is 0 (which sometimes entails a recheck -- see
      * below).
      */
+    //ctl变量的高三位保存线程池的状态，低29位表示线程池中现有的线程数
     private final AtomicInteger ctl = new AtomicInteger(ctlOf(RUNNING, 0));
     private static final int COUNT_BITS = Integer.SIZE - 3;
     private static final int CAPACITY   = (1 << COUNT_BITS) - 1;
 
     // runState is stored in the high-order bits
-    private static final int RUNNING    = -1 << COUNT_BITS;
-    private static final int SHUTDOWN   =  0 << COUNT_BITS;
-    private static final int STOP       =  1 << COUNT_BITS;
-    private static final int TIDYING    =  2 << COUNT_BITS;
-    private static final int TERMINATED =  3 << COUNT_BITS;
+    private static final int RUNNING    = -1 << COUNT_BITS;//运行状态，线程池刚创建就是这个状态
+    private static final int SHUTDOWN   =  0 << COUNT_BITS;//停工状态，不再接收新任务，已有的任务会继续执行
+    private static final int STOP       =  1 << COUNT_BITS;//停止状态，不再接收新任务，已有的任务也会中断
+    private static final int TIDYING    =  2 << COUNT_BITS;//清空状态，所有任务都停止了，工作的线程也全部结束了
+    private static final int TERMINATED =  3 << COUNT_BITS;//终止状态，线程池已经销毁
 
     // Packing and unpacking ctl
     private static int runStateOf(int c)     { return c & ~CAPACITY; }
@@ -1363,11 +1364,13 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
          * and so reject the task.
          */
         int c = ctl.get();
+        //检查当前线程池中的线程数是否达到了常驻线程数，如果未达到，就添加一个核心线程，如果添加失败，执行下面的
         if (workerCountOf(c) < corePoolSize) {
             if (addWorker(command, true))
                 return;
             c = ctl.get();
         }
+        //
         if (isRunning(c) && workQueue.offer(command)) {
             int recheck = ctl.get();
             if (! isRunning(recheck) && remove(command))

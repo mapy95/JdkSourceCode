@@ -334,6 +334,12 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      * to incorporate impact of the highest bits that would otherwise
      * never be used in index calculations because of table bounds.
      */
+    /**
+     * @param 马鹏勇
+     * @return
+     *
+     * 根据key的hashcode值的高16位和低16位进行异或运算，降低重复可能性
+     */
     static final int hash(Object key) {
         int h;
         return (key == null) ? 0 : (h = key.hashCode()) ^ (h >>> 16);
@@ -622,21 +628,38 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      * @param evict if false, the table is in creation mode.
      * @return previous value, or null if none
      */
+    /**
+     * @param hash
+     * @param key
+     * @param value
+     * @param onlyIfAbsent
+     * @param evict
+     * @return
+     *
+     * 在jdk1.7中，hashmap是由数组+链表组成的；如果hash冲突严重，那么链表会 比较长，这样，查询的效率会比较低
+     * 所以在jdk1.8中进行了优化，加入了红黑树
+     */
     final V putVal(int hash, K key, V value, boolean onlyIfAbsent,
                    boolean evict) {
         Node<K,V>[] tab; Node<K,V> p; int n, i;
+        //如果当前桶是空的，就初始化 resize()会进行初始化
         if ((tab = table) == null || (n = tab.length) == 0)
             n = (tab = resize()).length;
+        //根据key的hashCode，hash到的位置如果为空，就创建新的node
         if ((p = tab[i = (n - 1) & hash]) == null)
             tab[i] = newNode(hash, key, value, null);
         else {
+            //否则的话，就表示是需要判断当前hash到的是数组、还是链表、还是红黑树
             Node<K,V> e; K k;
+            //如果当前key的hash值和传入的key一致，就直接覆盖
             if (p.hash == hash &&
                 ((k = p.key) == key || (key != null && key.equals(k))))
                 e = p;
+            //如果是 红黑树，就按照数的结构存储
             else if (p instanceof TreeNode)
                 e = ((TreeNode<K,V>)p).putTreeVal(this, tab, hash, key, value);
             else {
+                //如果是 链表，就把新的节点加到链表后面，然后再循环所有的链表，如果链表长度超过了阈值，就转换为红黑树
                 for (int binCount = 0; ; ++binCount) {
                     if ((e = p.next) == null) {
                         p.next = newNode(hash, key, value, null);
@@ -644,6 +667,7 @@ public class HashMap<K,V> extends AbstractMap<K,V>
                             treeifyBin(tab, hash);
                         break;
                     }
+                    //在遍历的过程中，如果找到相同的key，就退出遍历，进行覆盖
                     if (e.hash == hash &&
                         ((k = e.key) == key || (key != null && key.equals(k))))
                         break;
@@ -652,6 +676,7 @@ public class HashMap<K,V> extends AbstractMap<K,V>
             }
             if (e != null) { // existing mapping for key
                 V oldValue = e.value;
+                //最后判断是否需要扩容
                 if (!onlyIfAbsent || oldValue == null)
                     e.value = value;
                 afterNodeAccess(e);
