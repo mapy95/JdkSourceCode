@@ -156,6 +156,10 @@ public class ThreadLocal<T> {
      *
      * @return the current thread's value of this thread-local
      */
+    /**
+     * 这里应该是根据当前线程从map中获取到当前线程的加锁次数
+     * @return
+     */
     public T get() {
         Thread t = Thread.currentThread();
         ThreadLocalMap map = getMap(t);

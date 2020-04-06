@@ -580,9 +580,25 @@ public abstract class AbstractQueuedSynchronizer
      * @param node the node to insert
      * @return node's predecessor
      */
+    /**
+     *
+     * @param node
+     * @return
+     */
+    /**
+     * 代码如果进入到这里，表示当前需向队列中插入node节点，但是没有空白节点
+     * @param node
+     * @return
+     */
     private Node enq(final Node node) {
         for (;;) {
             Node t = tail;
+            /**
+             * 这里还是先判断一下队尾是否为null，如果不为null，表示在这一段时间内，有其他线程已经创建了空白节点
+             * 1、如果尾结点为null，就new一个空白节点，并将空白节点设置为头结点；这时，其实头结点和尾结点都是这个空白节点
+             * 2、这里是一个for死循环，所以，在创建了空白节点之后，第二次循环的时候，会进入到else
+             *  将node节点设置为尾结点，并将head的next设置为node，至此，这个方法结束，return
+             */
             if (t == null) { // Must initialize
                 if (compareAndSetHead(new Node()))
                     tail = head;
@@ -602,17 +618,28 @@ public abstract class AbstractQueuedSynchronizer
      * @param mode Node.EXCLUSIVE for exclusive, Node.SHARED for shared
      * @return the new node
      */
+    /**
+     * 首先根据当前线程，生成一个node节点：
+     * 这个方法完成的作用就是：如果当前有节点在排队，或者已经生成了空白节点，就直接将new的node节点插入到队列中；如果当前没有节点在排队，没有生成空白节点，就先生成空白节点，插入到队列中，再将new的node查到空白节点后面
+     *   1、如果尾结点不为null，表示当前已经存在排队的节点；或者当前不存在排队的节点，但是已经生成了队列中的第一个空节点，这是，就不需要做其他操作，直接加到队尾即可
+     *   2、如果pred == null，表示当前没有尾结点；这时候，在插入到队列之前，需要先放一个空节点在最前面，然后把new出来的node加到空节点后面；这个操作，就是在enq(node);中完成的
+     * @param mode
+     * @return
+     */
     private Node addWaiter(Node mode) {
         Node node = new Node(Thread.currentThread(), mode);
         // Try the fast path of enq; backup to full enq on failure
         Node pred = tail;
+        //队尾不为null
         if (pred != null) {
+            //由于是双向链表，所以需要设置node.prev和pred.next
             node.prev = pred;
             if (compareAndSetTail(pred, node)) {
                 pred.next = node;
                 return node;
             }
         }
+        //这里是表示当前aqs队列为空，需要先new一个空白node节点作为head
         enq(node);
         return node;
     }
@@ -652,12 +679,24 @@ public abstract class AbstractQueuedSynchronizer
          * non-cancelled successor.
          */
         Node s = node.next;
+        /**
+         * s == null的场景就是当前队列中没有排队的线程，只有一个空的node节点
+         */
         if (s == null || s.waitStatus > 0) {
             s = null;
+            /**
+             * 这个for循环的作用是这样的：
+             *  假如现在AQS队列中是这样的：
+             *   空白node节点 -- A节点 --B节点 -- C节点 -- D节点
+             *   假如说A节点被取消了，这时候A的ws就是0，就会进入到这个循环中
+             *
+             *   最终会找到B返回
+             */
             for (Node t = tail; t != null && t != node; t = t.prev)
                 if (t.waitStatus <= 0)
                     s = t;
         }
+        //这里的s就是head的下一个节点，这里调用unpark();有一个原则，在哪里park()了，在被unpark()之后，就接着park()后面的代码来执行
         if (s != null)
             LockSupport.unpark(s.thread);
     }
@@ -666,6 +705,11 @@ public abstract class AbstractQueuedSynchronizer
      * Release action for shared mode -- signals successor and ensures
      * propagation. (Note: For exclusive mode, release just amounts
      * to calling unparkSuccessor of head if it needs signal.)
+     */
+    /**
+     * 这个方法，在两个地方有调用：
+     *  1.在读锁去排队的情况下，如果当前线程是第一个排队的节点，会尝试加读锁，如果加读锁成功，并且当前线程的下一个排队的node也是读锁，这时候，在把当前节点设置为head的方法中，唤醒下一个读锁，因为读读可以共存
+     *  2.在读锁正常解锁的时候，如果解锁成功，会调用这个方法，唤醒下一个排队的节点
      */
     private void doReleaseShared() {
         /*
@@ -686,8 +730,12 @@ public abstract class AbstractQueuedSynchronizer
                 if (ws == Node.SIGNAL) {
                     if (!compareAndSetWaitStatus(h, Node.SIGNAL, 0))
                         continue;            // loop to recheck cases
+                    /**
+                     * 唤醒头结点的下一个节点
+                     */
                     unparkSuccessor(h);
                 }
+                //TODO 待学习
                 else if (ws == 0 &&
                          !compareAndSetWaitStatus(h, 0, Node.PROPAGATE))
                     continue;                // loop on failed CAS
@@ -727,6 +775,10 @@ public abstract class AbstractQueuedSynchronizer
         if (propagate > 0 || h == null || h.waitStatus < 0 ||
             (h = head) == null || h.waitStatus < 0) {
             Node s = node.next;
+            /**
+             * 只有在当前node节点的next为null，或者next也是读锁的时候，才会走下面的流程
+             * 看下面doReleaseShared()的代码，千万要记住，只有这个当前加读锁成功的node节点的next也是读锁的时候，才会去唤醒
+             */
             if (s == null || s.isShared())
                 doReleaseShared();
         }
@@ -792,6 +844,14 @@ public abstract class AbstractQueuedSynchronizer
      * @param node the node
      * @return {@code true} if thread should block
      */
+    /**
+     * 1、首先判断上一个节点的ws是否是-1，默认创建的时候，没有赋值，所以是0
+     * 2、然后，如果上一个节点的ws也不大于0，也不是-1，会进入到最后的一个else中，将上一个节点的ws设置为-1
+     * 至此这个方法结束，return之后，外面是一个死循环，会再次进入到这个方法，这时候，pred.ws已经是-1了，所以就return true，然后将当前线程park
+     * @param pred
+     * @param node
+     * @return
+     */
     private static boolean shouldParkAfterFailedAcquire(Node pred, Node node) {
         int ws = pred.waitStatus;
         if (ws == Node.SIGNAL)
@@ -815,6 +875,7 @@ public abstract class AbstractQueuedSynchronizer
              * need a signal, but don't park yet.  Caller will need to
              * retry to make sure it cannot acquire before parking.
              */
+            //这里是把上一个节点的waitStatus设置为-1
             compareAndSetWaitStatus(pred, ws, Node.SIGNAL);
         }
         return false;
@@ -854,24 +915,52 @@ public abstract class AbstractQueuedSynchronizer
      * @param arg the acquire argument
      * @return {@code true} if interrupted while waiting
      */
+    /**
+     * 这个方法完成的是：判断当前入队的node节点是否需要park
+     *  如果当前是第二个线程进入到这里，会尝试去竞争锁；
+     * @param node
+     * @param arg
+     * @return
+     */
     final boolean acquireQueued(final Node node, int arg) {
         boolean failed = true;
         try {
             boolean interrupted = false;
             for (;;) {
+                //这里的p是当前节点的上一个节点 prev
                 final Node p = node.predecessor();
+                /**
+                 * 如果当前节点的prev就是head头结点，就表示当前只有我自己一个线程来排队了，这时候，就尝试加一次锁，看是否可以加锁成功；因为有可能在我入队的这一段时间，线程已经执行完了，所以这里要尝试加一次锁
+                 *
+                 * 如果加锁成功，就把当前节点设置为头结点，其实就是把当前节点设置为空节点，将原来的空节点回收掉
+                 * 如果加锁失败，就走下面的流程
+                 */
                 if (p == head && tryAcquire(arg)) {
                     setHead(node);
                     p.next = null; // help GC
                     failed = false;
                     return interrupted;
                 }
+                /**
+                 * 代码走到这里，表示当前我不是第一个来排队的线程，，或者我是第一个来排队的，上面尝试加锁的时候，失败了；这里判断是否需要park(),需要判断我的上一个节点的waitStatus是否是-1(待唤醒状态)
+                 * ；如果不是，就将上一个节点的ws设置为-1，然后再调用LockSupport.park
+                 * (this);并将当前线程park(),然后返回;
+                 *
+                 * parkAndCheckInterrupt();会将当前线程阻塞
+                 *
+                 * 需要注意的是：线程在哪里被park()的，等到被unpark()的时候，就会接着park()的代码执行，也就是说，线程被唤醒之后，会执行return Thread.interrupted();
+                 * 如果这里是false，就会接着for循环，尝试加锁，这时候，会加锁成功，因为本来就该我来加锁了，然后return interrupted,这时候的interrupted是false
+                 */
                 if (shouldParkAfterFailedAcquire(p, node) &&
                     parkAndCheckInterrupt())
                     interrupted = true;
             }
         } finally {
             if (failed)
+            /**
+             * 这里的failed为true的条件是比较苛刻的，如果上面的线程加锁成功了，failed为false；如果未加锁成功，又会unpark掉，所以理论上，这里是不可能为true
+             * 的，除非是在上面代码的执行过程中，抛出了异常
+             */
                 cancelAcquire(node);
         }
     }
@@ -945,6 +1034,14 @@ public abstract class AbstractQueuedSynchronizer
      * Acquires in shared uninterruptible mode.
      * @param arg the acquire argument
      */
+    /**
+     * 这里和AQS排队的逻辑基本一致
+     *  1、添加共享锁的node节点，如果队列为空，就先插入空node节点，然后将当前节点插入进去
+     *  2、for循环中，先判断当前node的上一个节点是否是头结点head，如果是，表明当前线程是第一个来排队的节点，需要去尝试加一次读锁，
+     *    2.1、如果加读锁成功，就将当前node节点设置为空白节点,和reentrantLock排队不同的就是这里
+     *    2.2、如果加锁失败，就将上一个节点的ws设置为-1，然后park
+     * @param arg
+     */
     private void doAcquireShared(int arg) {
         final Node node = addWaiter(Node.SHARED);
         boolean failed = true;
@@ -955,6 +1052,10 @@ public abstract class AbstractQueuedSynchronizer
                 if (p == head) {
                     int r = tryAcquireShared(arg);
                     if (r >= 0) {
+                        /**
+                         * setHeadAndPropagate()是将当前节点设置为头结点head
+                         * 然后会判断当前head节点(也就是这里的node节点)的下一个节点是否是读锁，如果是读锁，会尝试唤醒，因为读读可以共存；调用的doReleaseShared()方法
+                         */
                         setHeadAndPropagate(node, r);
                         p.next = null; // help GC
                         if (interrupted)
@@ -1194,6 +1295,26 @@ public abstract class AbstractQueuedSynchronizer
      *        {@link #tryAcquire} but is otherwise uninterpreted and
      *        can represent anything you like.
      */
+    /**
+     * 公平锁加锁流程：
+     *  1、先尝试加锁
+     *   1.1、如果加锁成功，就返回，流程结束
+     *   1.2、如果加锁失败，就判断是否可重入，可重入，就加锁成功，流程结束
+     *   1.3、如果未加锁成功，且不可重入，就去排队
+     *  2、排队addWaiter()
+     *   2.1、在排队的时候，先判断当前是否有在排队的节点，或者是否有空白的node节点；如果有，就直接将当前线程加入到队列中排队
+     *   2.2、如果没有在排队的节点、或者没有空白节点，就先new一个空白节点，插入到队头，然后将当前线程插入到队列，并设置为队尾
+     *  3、判断是否需要park;acquireQueued()方法
+     *
+     *
+     * 这里是尝试加锁，如果加锁失败，就放入到队列中
+     *
+     * 返回true，表示加锁成功，无需排队
+     * 如果tryAcquire返回false，表示需要去排队
+     *
+     *
+     * @param arg
+     */
     public final void acquire(int arg) {
         if (!tryAcquire(arg) &&
             acquireQueued(addWaiter(Node.EXCLUSIVE), arg))
@@ -1257,6 +1378,22 @@ public abstract class AbstractQueuedSynchronizer
      *        can represent anything you like.
      * @return the value returned from {@link #tryRelease}
      */
+    /**
+     * 注意，ReentrantLock.unLock()和ReentrantReadWriteLock.writeLock.unLock()都是调用的这里
+     *
+     * tryRelease()方法返回true，表示解锁成功；返回false，表示有重入锁，还未解锁成功
+     * 1、如果解锁成功，就判断当前头结点的ws是否为非0，正常场景下，这里的ws应该是-1
+     * 如果这里的ws为0，表示这是最后一个线程了，因为后面有排队的线程的话，就会把我的ws变成-1
+     * 换而言之，在不考虑其他情况，如果一个node节点的ws为0，就是队尾了
+     *
+     * 在解锁成功之后，需要进行下一步的操作，这里可能会有多种情况
+     * 1、当前aqs队列为空，没有在排队的线程，这里的head就是null
+     * 2、aqs队列不为空，但是只有一个空白node节点，这时候，head的ws就是0，因为我后面没有人在排队了，没有人将我的ws设置为-1；也就是说，我执行完之后，就不需要唤醒后面的节点了
+     * 3、aqs队列不为空，并且空白node节点后面，还有线程在排队，这就是要调用unparkSuccessor(h)的场景
+     *
+     * @param arg
+     * @return
+     */
     public final boolean release(int arg) {
         if (tryRelease(arg)) {
             Node h = head;
@@ -1277,6 +1414,10 @@ public abstract class AbstractQueuedSynchronizer
      * @param arg the acquire argument.  This value is conveyed to
      *        {@link #tryAcquireShared} but is otherwise uninterpreted
      *        and can represent anything you like.
+     */
+    /**
+     * tryAcquireShared尝试加读锁，如果加锁失败(小于0，表示加锁失败)，就排队
+     * @param arg
      */
     public final void acquireShared(int arg) {
         if (tryAcquireShared(arg) < 0)
@@ -1336,6 +1477,13 @@ public abstract class AbstractQueuedSynchronizer
      *        {@link #tryReleaseShared} but is otherwise uninterpreted
      *        and can represent anything you like.
      * @return the value returned from {@link #tryReleaseShared}
+     */
+    /**
+     * 读锁解锁过程：
+     *  1.减锁
+     *  2.如果解锁成功，就尝试唤醒
+     * @param arg
+     * @return
      */
     public final boolean releaseShared(int arg) {
         if (tryReleaseShared(arg)) {
@@ -1508,6 +1656,37 @@ public abstract class AbstractQueuedSynchronizer
      *         current thread, and {@code false} if the current thread
      *         is at the head of the queue or the queue is empty
      * @since 1.7
+     */
+    /**
+     * 只有这个方法返回false，表示当前线程可以加锁，无需排队；如果返回true，表示需要排队
+     * 由于这里是&判断条件，所以，只有两个条件都为true，返回返回true；否则就是false
+     * 那我们来说不需要排队，可以直接加锁的场景：
+     * h != t 这个判断false有两种场景
+     *  1、当前队列中，还没有排队的线程，且队头的空白node节点还没有生成，这时候，都是null
+     *  2、当前队列中，已经生成了空白的node节点，但是没有排队的队列，这时候tail == head，这种场景有可能是在排队的节点都执行完了，然后这时候又来一个线程进行加锁
+     *
+     * 如果 h != t为true，就需要判断后面的条件，只要后面的返回false，就可以不排队
+     * ((s = h.next) == null || s.thread != Thread.currentThread());
+     *  3.1、首先，来判断这个条件，说明前面的 h!=t是true(否则，如果h!=t为false，就无需判断后面的条件了)，也就是说，当前队列中，已经有一个或者多个线程在排队
+     * 所以我觉得这里，如果在h!=t为true的情况下，不会存在h.next == null的这种场景；因为如果说head.next为null，就表明，当前只有一个空白节点，只有一个空白节点，在h!=t的时候，就直接返回false了
+     *
+     *  3.2、这个判断条件返回false，需要两个或条件都为false，否则，就会返回true，让线程去排队
+     *   两个条件都为false，简单：头结点后面有排队的节点，且头结点的下一个节点的thread是当前线程，这时候，会返回false，无需排队，直接尝试加锁;其实就是：当前来加锁的线程，和第二个节点(第一个排队的节点)
+     *   是同一个线程，这时候，可以加；因为我自己就是排在第二个的(第一个是空节点)，为什么不能加锁呢？意思就是，我已经排到队了，就该我加锁
+     *
+     * 假如说，这时候一个线程过来加锁， h!=t，但是当前线程不是排队中第二个节点的thread，就会让排队，原因就是，这是公平锁，已经有人在排队了，为什么你不排队？这种情况就是 s.thread != Thread.currentThread()为true
+     *
+     *  3.3、如果h != t为true；后面的这个条件中，只要有一个为true，就需要去排队
+     *   h.next == null为true 这个条件我觉得在前面条件为true的情况下，这里不太可能为true；所以，后面这个条件为true
+     *   ，就是当前尝试加锁的线程和排队的线程不是同一个，这时候，就需要去排队，因为，你来加锁的时候，我已经在排队了，并且你和我又不是同一个线程，你为什么不排队？
+     *
+     * 所以总结而言，对于公平锁，无需排队的有这三种情况：
+     *  1、当前aqs队列为空
+     *  2、当前aqs队列不为空，只有一个空白的node节点
+     *  3、当前aqs队列不为空，有多个线程在排队，只有当前来加锁的线程是第一个排队的加锁线程时，可以不排队，直接尝试加锁（这个场景之前在网上看到一个帖子：是这样的，假如说现在在排队打水，A排在第一个等待打水的位置，如果A
+     *  的父母、亲戚来打水了，可以不排队，直接站到A的位置，因为他们是亲戚，一家人,也就是可重入）
+     *
+     * @return
      */
     public final boolean hasQueuedPredecessors() {
         // The correctness of this depends on head being initialized

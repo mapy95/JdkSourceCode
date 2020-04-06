@@ -126,6 +126,11 @@ public class ReentrantLock implements Lock, java.io.Serializable {
          * Performs non-fair tryLock.  tryAcquire is implemented in
          * subclasses, but both need nonfair try for trylock method.
          */
+        /**
+         * 非公平锁在加锁的时候，不会判断是否允许排队，而是直接尝试cas加锁，成功就成功，不成功就排队
+         * @param acquires
+         * @return
+         */
         final boolean nonfairTryAcquire(int acquires) {
             final Thread current = Thread.currentThread();
             int c = getState();
@@ -145,6 +150,14 @@ public class ReentrantLock implements Lock, java.io.Serializable {
             return false;
         }
 
+        /**
+         * unlock解锁的时候，公平锁和非公平锁是一样的逻辑
+         *  1、判断当前解锁的线程和当前加锁的线程是否是同一个；如果不是同一个,报错
+         *  2、如果是同一个，state-1，如果-1之后的state为0；就表示当前线程已经解锁成；如果不为0，表示锁进行了重入，就将减1之后的值，set到state
+         *
+         * @param releases
+         * @return
+         */
         protected final boolean tryRelease(int releases) {
             int c = getState() - releases;
             if (Thread.currentThread() != getExclusiveOwnerThread())
@@ -202,6 +215,10 @@ public class ReentrantLock implements Lock, java.io.Serializable {
          * Performs lock.  Try immediate barge, backing up to normal
          * acquire on failure.
          */
+        /**
+         * 非公平锁在加锁的时候，会先尝试加锁，如果加锁失败，就调用acquire();
+         * 在acquire()方法中，公平锁和非公平锁的区别是：在state为1的时候，非公平锁不会判断当前是否允许加锁，而是直接cas加锁，如果加锁失败，就去排队，后面的流程，就和公平锁一样了
+         */
         final void lock() {
             if (compareAndSetState(0, 1))
                 setExclusiveOwnerThread(Thread.currentThread());
@@ -228,16 +245,39 @@ public class ReentrantLock implements Lock, java.io.Serializable {
          * Fair version of tryAcquire.  Don't grant access unless
          * recursive call or no waiters or is first.
          */
+        /**
+         * 这个方法的作用是：判断当前线程是否可以加锁，
+         *   如果未加锁，尝试加锁，加锁成功，就无需排队，加锁失败，就去排队
+         *   如果已经加过锁了，判断是否可重入，可重入，就state+1；不可重入就去排队
+         * 拿到当前是否已经加锁的标识：state(为0，表示未加锁；为1表示已经加锁)
+         * 1.如果未加锁：
+         *   1.1 尝试加锁，如果加锁成功，使用cas更新state的值
+         *     hasQueuedPredecessors();只有这个方法返回false，才表示当前线程可以加锁；否则，就会去排队
+         * 2.如果已经加锁
+         *   2.1 判断当前锁和已经加锁的是否是同一把锁，如果是同一把锁，可以重入，重入需要对state+1
+         * @param acquires
+         * @return
+         */
         protected final boolean tryAcquire(int acquires) {
             final Thread current = Thread.currentThread();
             int c = getState();
+            //state为0表示当前没有线程加锁
             if (c == 0) {
+                /**
+                 * hasQueuedPredecessors();判断当前线程是否可以加锁，如果返回false，表示可以加锁，返回true，表示需要排队
+                 * compareAndSetState：尝试加锁，加锁就是把aqs的state+1
+                 * setExclusiveOwnerThread：将当前线程设置为持有锁的线程
+                 */
                 if (!hasQueuedPredecessors() &&
                     compareAndSetState(0, acquires)) {
                     setExclusiveOwnerThread(current);
                     return true;
                 }
             }
+            /**
+             * 如果当前已经有线程加锁了，判断当前加锁的线程和持有锁的线程是否是同一个，也就是所谓的锁重入
+             * 如果是重入，就把state+1
+             */
             else if (current == getExclusiveOwnerThread()) {
                 int nextc = c + acquires;
                 if (nextc < 0)
