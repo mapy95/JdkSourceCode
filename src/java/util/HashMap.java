@@ -339,6 +339,7 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      * @return
      *
      * 根据key的hashcode值的高16位和低16位进行异或运算，降低重复可能性
+     * 这里和jdk1.7不同，jdk1.7 hashmap的key计算对应的hash值和hashSeed这个参数有关
      */
     static final int hash(Object key) {
         int h;
@@ -638,29 +639,41 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      *
      * 在jdk1.7中，hashmap是由数组+链表组成的；如果hash冲突严重，那么链表会 比较长，这样，查询的效率会比较低
      * 所以在jdk1.8中进行了优化，加入了红黑树
+     *
+     * 1.如果当前数组是空的，就初始化 resize()会进行初始化
+     * 2.根据key的hashCode，hash到的位置如果为空，就创建新的node;表示当前key没有冲突
+     * 3.否则的话，就表示是需要判断当前key要存储的位置是链表、还是红黑树
+     *   3.1 如果当前key的hash值和传入的key一致，这里就把当前节点赋值给e,在后面进行覆盖;p表示的是数组中某个下标对应的元素
+     *   3.2 如果是红黑树，按照树的结构存储
+     *   3.3 如果是链表，就从p节点开始循环；
+     *     3.3.1 如果到最后一个null节点，还是没有找到key相等的元素，那就需要新增了，直接插到链表的尾部
+     *     3.3.2 如果在遍历链表的过程中，发现了key相等的元素，表示当前要插入的key，在链表中，有对应的key存在，直接覆盖即可
+     *     3.3.3 如果插入到链表尾部之后，需要判断链表长度是否超过阀值，超过，就进行树化
+     *
      */
     final V putVal(int hash, K key, V value, boolean onlyIfAbsent,
                    boolean evict) {
         Node<K,V>[] tab; Node<K,V> p; int n, i;
-        //如果当前桶是空的，就初始化 resize()会进行初始化
+        //1.如果当前数组是空的，就初始化 resize()会进行初始化
         if ((tab = table) == null || (n = tab.length) == 0)
             n = (tab = resize()).length;
-        //根据key的hashCode，hash到的位置如果为空，就创建新的node
+        //2.根据key的hashCode，hash到的位置如果为空，就创建新的node;表示当前key没有冲突
         if ((p = tab[i = (n - 1) & hash]) == null)
             tab[i] = newNode(hash, key, value, null);
         else {
-            //否则的话，就表示是需要判断当前hash到的是数组、还是链表、还是红黑树
+            //3.否则的话，就表示是需要判断当前key要存储的位置是链表、还是红黑树
             Node<K,V> e; K k;
-            //如果当前key的hash值和传入的key一致，就直接覆盖
+            //3.1如果当前key的hash值和传入的key一致，这里就把当前节点赋值给e,在后面进行覆盖
             if (p.hash == hash &&
                 ((k = p.key) == key || (key != null && key.equals(k))))
                 e = p;
-            //如果是 红黑树，就按照数的结构存储
+            //3.2如果是 红黑树，就按照树的结构存储
             else if (p instanceof TreeNode)
                 e = ((TreeNode<K,V>)p).putTreeVal(this, tab, hash, key, value);
             else {
-                //如果是 链表，就把新的节点加到链表后面，然后再循环所有的链表，如果链表长度超过了阈值，就转换为红黑树
+                //3.3如果是 链表，就把新的节点加到链表后面，然后再循环所有的链表，如果链表长度超过了阈值，就转换为红黑树
                 for (int binCount = 0; ; ++binCount) {
+                    //这里是遍历到链表的最后一个
                     if ((e = p.next) == null) {
                         p.next = newNode(hash, key, value, null);
                         if (binCount >= TREEIFY_THRESHOLD - 1) // -1 for 1st
@@ -698,6 +711,13 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      * with a power of two offset in the new table.
      *
      * @return the table
+     */
+    /**
+     * 初始化或者扩容
+     * 在jdk1.7里面，扩容需要有两个条件：一是当前元素个数超过了阀值，且对应的tab[i] != null
+     * 但是在1.8中，不一样，因为这里不仅仅是扩容要用的代码，也是初始化的时候，需要用到的
+     *
+     * @return
      */
     final Node<K,V>[] resize() {
         Node<K,V>[] oldTab = table;
@@ -776,6 +796,18 @@ public class HashMap<K,V> extends AbstractMap<K,V>
     /**
      * Replaces all linked nodes in bin at index for given hash unless
      * table is too small, in which case resizes instead.
+     */
+    /**
+     * 链表转换红黑树
+     * 1.需要满足两个条件：数组不为空且hashmap数组的长度超过64，否则，只会进行扩容，不会进行树化
+     * 2.e表示的是数组中某个链表对应的头结点
+     *   2.1 do while循环，会把链表中每个node节点进行转换，转换成treeNode,然后将链表变成了双向链表，有prev和next，hd表示的是原链表的第一个节点，
+     *   2.2 然后根据hd进行真正的红黑树转换，hd就是红黑树初始化的根节点
+     *
+     * 所以：链表转红黑树，首先会把当前的单向链表，转换成双向链表，然后再拿着双向链表的头结点hd去进行红黑树的转换
+     *
+     * @param tab
+     * @param hash：待插入元素key值对应的hash
      */
     final void treeifyBin(Node<K,V>[] tab, int hash) {
         int n, index; Node<K,V> e;
@@ -1933,24 +1965,34 @@ public class HashMap<K,V> extends AbstractMap<K,V>
 
         /**
          * Forms tree of the nodes linked from this node.
+         *
+         * 在树化的过程中，是先把单向链表转换成双向链表，然后把双向链表转红黑树
+         * 红黑树的根节点如果发生了变化，就需要把变化之后的根节点放到双向链表的head
+         *
          */
         final void treeify(Node<K,V>[] tab) {
             TreeNode<K,V> root = null;
+            //这里会遍历前面的双向链表
             for (TreeNode<K,V> x = this, next; x != null; x = next) {
                 next = (TreeNode<K,V>)x.next;
+                //首先将根节点的左右节点设置为null
                 x.left = x.right = null;
+                //把第一个hd，设置为root节点，默认是黑色的
                 if (root == null) {
                     x.parent = null;
                     x.red = false;
                     root = x;
                 }
                 else {
+                    //这里的x就是下一个要插入到树中的元素
                     K k = x.key;
                     int h = x.hash;
                     Class<?> kc = null;
+                    //遍历树中已经存在的节点
                     for (TreeNode<K,V> p = root;;) {
                         int dir, ph;
                         K pk = p.key;
+                        //如果新结点的hash值小于树中已经存在的树节点，就是-1；如果新结点的hash值大于树中的结点对应的hash，就是1，意思就是，-1往左插入，1往右插入
                         if ((ph = p.hash) > h)
                             dir = -1;
                         else if (ph < h)
@@ -1961,18 +2003,27 @@ public class HashMap<K,V> extends AbstractMap<K,V>
                             dir = tieBreakOrder(k, pk);
 
                         TreeNode<K,V> xp = p;
+                        /**
+                         * 这里是，根据上面的dir来进行遍历判断，for循环，一直找到最底层的孙子结点，判断条件就是p.left或者p.right为null，就表示当期那的p结点是最底层的了
+                         * 如果dir <= 0,就往左，否则 往右
+                         */
                         if ((p = (dir <= 0) ? p.left : p.right) == null) {
                             x.parent = xp;
                             if (dir <= 0)
                                 xp.left = x;
                             else
                                 xp.right = x;
+                            //这是把x节点插入到红黑树中
                             root = balanceInsertion(root, x);
                             break;
                         }
                     }
                 }
             }
+            /**
+             * 这里是把跟结点移到tab[i]上，因为在红黑树转换的过程中，root结点是可能发生转换的
+             * 同时，把root结点对应的treeNode变成双线链表的头结点head,因为红黑树的root结点，很有可能是双向链表中的某个节点;要保证root的根节点对应的双线链表的头结点
+             */
             moveRootToFront(tab, root);
         }
 
@@ -2015,6 +2066,7 @@ public class HashMap<K,V> extends AbstractMap<K,V>
                     if (!searched) {
                         TreeNode<K,V> q, ch;
                         searched = true;
+                        //根据key从红黑树中找到相同的key，就返回对应的treeNode节点
                         if (((ch = p.left) != null &&
                              (q = ch.find(h, k, kc)) != null) ||
                             ((ch = p.right) != null &&
@@ -2024,6 +2076,7 @@ public class HashMap<K,V> extends AbstractMap<K,V>
                     dir = tieBreakOrder(k, pk);
                 }
 
+                //如果没有找到相同的key，就表示需要插入
                 TreeNode<K,V> xp = p;
                 if ((p = (dir <= 0) ? p.left : p.right) == null) {
                     Node<K,V> xpn = xp.next;
