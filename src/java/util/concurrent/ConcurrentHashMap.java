@@ -1007,24 +1007,54 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
     }
 
     /** Implementation for put and putIfAbsent */
+    /**
+     * 这里的：
+     *  i:表示根据key的hash值计算得到的需要存放到哪个元素下
+     *  f:表示i下标中对应的元素结点，要么是树的根节点，要么是链表的头结点，要么就只有这一个元素
+     *  fh:表示f结点的hash值
+     * @param key
+     * @param value
+     * @param onlyIfAbsent
+     * @return
+     */
     final V putVal(K key, V value, boolean onlyIfAbsent) {
         if (key == null || value == null) throw new NullPointerException();
         int hash = spread(key.hashCode());
         int binCount = 0;
+        //1.在put元素的时候，首先判断当前tab是否为空，为空，就初始化
         for (Node<K,V>[] tab = table;;) {
             Node<K,V> f; int n, i, fh;
             if (tab == null || (n = tab.length) == 0)
                 tab = initTable();
+            //2.如果tab不为空，就根据key计算出一个下标值，判断数组中这个位置是否为null，为null，就new一个新的node节点，通过cas设置到该数组元素中
             else if ((f = tabAt(tab, i = (n - 1) & hash)) == null) {
                 if (casTabAt(tab, i, null,
                              new Node<K,V>(hash, key, value, null)))
                     break;                   // no lock when adding to empty bin
             }
+            /**
+             * 3.这里的f就是根据put的key计算得到的元素下标位置，如果hash值Wie-1，表示当前有其他线程正在进行扩容
+             * 如果有其他线程在扩容，那helpTransfer的意思是帮助另外一个线程去扩容
+             */
             else if ((fh = f.hash) == MOVED)
                 tab = helpTransfer(tab, f);
             else {
+                //4.进入到这里，表示是正常的插入
                 V oldVal = null;
                 synchronized (f) {
+                    /**
+                     * 4.1 先通过synchronized加锁
+                     * 4.2 然后再判断当前i这个位置是否是f节点，因为有可能当前线程在执行的时候，其他线程修改了数组中i位置对应的结点信息
+                     * 4.3 如果hashCode大于0，表示这是一个链表
+                     *   4.3.1 从头结点开始循环，如果找到key相同的node结点，就把值放到oldVal,然后value覆盖原来的value
+                     *   4.3.2 如果到最后一个结点，还没有找到key相等的，就插入到队尾
+                     * 4.4 如果当前node结点是TreeBin类型的，那就是树
+                     *
+                     * 4.5 如果bigCount大于0，且大于链表转红黑树的阈值，就进行树的转换
+                     * 如果oldValue不为null，表示是值覆盖，就返回oldValue
+                     *
+                     *
+                     */
                     if (tabAt(tab, i) == f) {
                         if (fh >= 0) {
                             binCount = 1;
@@ -1067,6 +1097,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                 }
             }
         }
+        //扩容
         addCount(1L, binCount);
         return null;
     }
@@ -2223,6 +2254,11 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
     private final Node<K,V>[] initTable() {
         Node<K,V>[] tab; int sc;
         while ((tab = table) == null || tab.length == 0) {
+            /**
+             * sizeCtl第一次进来的时候是0，会走else的逻辑
+             * else判断条件中，会通过cas将sizeCtl设置为-1，相当于是加锁了，如果第二个线程来初始化，会发现sizeCtl小于0，线程就会yield()
+             *
+             */
             if ((sc = sizeCtl) < 0)
                 Thread.yield(); // lost initialization race; just spin
             else if (U.compareAndSwapInt(this, SIZECTL, sc, -1)) {
@@ -2232,6 +2268,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                         @SuppressWarnings("unchecked")
                         Node<K,V>[] nt = (Node<K,V>[])new Node<?,?>[n];
                         table = tab = nt;
+                        //这里是将n的长度 * 0.75赋值给sc
                         sc = n - (n >>> 2);
                     }
                 } finally {

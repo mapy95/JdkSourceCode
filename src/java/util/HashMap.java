@@ -571,6 +571,16 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      * @param key the key
      * @return the node, or null if none
      */
+    /**
+     * 在从hashmap中获取数据的时候，先根据当前key的hash，计算出当前key在数组的哪个元素中
+     *  1.先判断当前key是否是数组元素中的第一个值，如果是，就直接return
+     *  2.如果不是，就判断当前存储的是树，还是链表
+     *    2.1、如果是树，从红黑树中获取元素信息
+     *    2.2、如果是链表，从链表中依次循环，遍历查找到对应的元素节点
+     * @param hash
+     * @param key
+     * @return
+     */
     final Node<K,V> getNode(int hash, Object key) {
         Node<K,V>[] tab; Node<K,V> first, e; int n; K k;
         if ((tab = table) != null && (n = tab.length) > 0 &&
@@ -717,6 +727,29 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      * 在jdk1.7里面，扩容需要有两个条件：一是当前元素个数超过了阀值，且对应的tab[i] != null
      * 但是在1.8中，不一样，因为这里不仅仅是扩容要用的代码，也是初始化的时候，需要用到的
      *
+     * 1.判断当前数组长度是否大于0
+     *   如果大于int类型最大值，就使用Integer.MAX_VALUE作为数组长度
+     *   如果不大于，就把当前数组长度左移一位，相当于扩容一倍
+     * 2.如果数组长度不大于0，再判断阈值是否大于0，如果阈值大于0，就把阈值赋值给新的数组长度
+     * 3.如果阈值也不大于0，就表示是第一次插入数据，需要初始化，默认初始化长度是16，阈值是12
+     *
+     * 4.如果原数组不为null，就需要进行数据的迁移
+     *  在数据迁移的时候，有以下几种情况
+     *  4.1、当前数据元素是空节点，就无需处理
+     *  4.2、如果当前元素下只有一个节点，就直接进行hash，计算元素下标，插入到新的数组中即可
+     *  4.3、如果当前元素中，存储的是树结构，就需要对红黑树中的节点进行重新计算迁移（总体思想是：把树进行拆分，拆分成两个，如果拆分之后的链表长度小于6，就把树转成链表存储，否则还是用树存储）
+     *   在将链表转换成红黑树的时候，会先把链表转换成一个双向链表，这里在对数进行扩容的时候，实际上操作的是，双向链表，按照e.hashCode &
+     *   oldCap；根据与运算之后的值，如果是0，放到低位数组，如果是1，放到高位数组；会分别统计低位数据和高位数组的长度;
+     *   这里需要注意的是：在分别统计了之后，可能会存在两种情况：
+     *    ①.确实分成了两棵树，或者说是两个treeNode；这时候，就需要判断每个treeNode的长度是否小于6，小于6，就转换成单向链表，否则的话，就转换成红黑树存储
+     *    ②.也有可能重新与运算之后，还是只有一个treeNode,也就是说每个树节点与运算之后，都是0，或者都是1，这时候，其实直接整棵树迁移即可，无需做其他处理
+
+     *
+     *  4.4、如果当前元素中，存储的是链表结构，在1.8中是这样迁移的
+     *   比如说，tab[1]存储的是链表，在迁移的时候，拿链表hash值和old数组的长度做与运算，要么是0，要么是1
+     *   如果结果是0，就存到新数组中的tab[1];如果是1，就把节点存到新数组中的tab[17]
+     *
+     *
      * @return
      */
     final Node<K,V>[] resize() {
@@ -751,13 +784,23 @@ public class HashMap<K,V> extends AbstractMap<K,V>
         if (oldTab != null) {
             for (int j = 0; j < oldCap; ++j) {
                 Node<K,V> e;
+                //原数组中，tab[i]不为null的时候，才需要把数据进行迁移
                 if ((e = oldTab[j]) != null) {
                     oldTab[j] = null;
+                    //如果当前next为null，表示当前数组下标下，只有一个元素，直接进行迁移即可
                     if (e.next == null)
                         newTab[e.hash & (newCap - 1)] = e;
+                    /**
+                     * 如果当前元素中存储的是红黑树，就需要对树进行迁移
+                     * this是指当前hashmap
+                     * newTab是值扩容后的节点数组
+                     * j就是old数组对应的元素下标
+                     * oldCap就是原数组的长度
+                     */
                     else if (e instanceof TreeNode)
                         ((TreeNode<K,V>)e).split(this, newTab, j, oldCap);
                     else { // preserve order
+                        //如果是链表的话，需要对链表进行迁移
                         Node<K,V> loHead = null, loTail = null;
                         Node<K,V> hiHead = null, hiTail = null;
                         Node<K,V> next;
@@ -867,12 +910,30 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      * @param movable if false do not move other nodes while removing
      * @return the node, or null if none
      */
+    /**
+     * 这是从hashmap中remove的源码：
+     *
+     * @param hash
+     * @param key
+     * @param value
+     * @param matchValue
+     * @param movable
+     * @return
+     */
     final Node<K,V> removeNode(int hash, Object key, Object value,
                                boolean matchValue, boolean movable) {
         Node<K,V>[] tab; Node<K,V> p; int n, index;
+        //1.先获取到当前key对应的数组元素信息，这里的p，就是hashmap数组元素下标对应的ndoe节点
         if ((tab = table) != null && (n = tab.length) > 0 &&
             (p = tab[index = (n - 1) & hash]) != null) {
             Node<K,V> node = null, e; K k; V v;
+            /**
+             * 在remove的时候，也是分三种情况
+             *  1.只有一个元素，或者当前红黑树的根节点、链表的头结点就是要删除的元素，就直接return
+             *  2.否则的话，如果是树结构，就从树中查找对应的结点
+             *  3.如果是链表，就从链表中查询对应的结点信息
+             *
+             */
             if (p.hash == hash &&
                 ((k = p.key) == key || (key != null && key.equals(k))))
                 node = p;
@@ -891,6 +952,13 @@ public class HashMap<K,V> extends AbstractMap<K,V>
                     } while ((e = e.next) != null);
                 }
             }
+            /**
+             * 如果找到了，那这时候  node就不为空，根据对应的类型，去remove
+             *
+             * remove之后，需要判断，如果当前node就是根节点或者head，就需要把node.next指向tab[i]
+             * 否则的话，就是 node.prev.next = node.next,当然，由于链表的话是单向的，所以这里不能用prev，但是，如果当前是链表的话，p就是node的上一个节点了，看上面的while循环可知
+             * 所以下面的判断是：先判断是否是treeNode，然后再判断是否是只有一个元素，else表示当前是链表存储格式的，就直接p.next = node.next即可
+             */
             if (node != null && (!matchValue || (v = node.value) == value ||
                                  (value != null && value.equals(v)))) {
                 if (node instanceof TreeNode)
@@ -2203,6 +2271,7 @@ public class HashMap<K,V> extends AbstractMap<K,V>
                 moveRootToFront(tab, r);
         }
 
+
         /**
          * Splits nodes in a tree bin into lower and upper tree bins,
          * or untreeifies if now too small. Called only from resize;
@@ -2242,9 +2311,19 @@ public class HashMap<K,V> extends AbstractMap<K,V>
 
             if (loHead != null) {
                 if (lc <= UNTREEIFY_THRESHOLD)
+                /**
+                 * 当treeNode的长度小于6，就把treeNode转换成node,也就是把树转换成链表
+                 * 如果treeNode的长度大于6，那就还是用树存储，就调用loHead.treeify(tab)来进行树的
+                 * 转换，但是这里的判断条件特别的牛逼：因为在对数进行重新hash与运算之后，会存在两种情况：
+                 *   1.高位的treeNode有树节点，低位的treeNode也有树节点，这时候，就要判断每个treeNode的长度是否小于6，小于6，转换成单向链表，不小于6.就转换成红黑树
+                 *   2.高位treeNode没有树节点，或者低位treeNode没有树节点，这时，其实整个树进行迁移即可，这也就是为什么在判断lc低位treeNode的时候，需要去判断hiHead是否为null
+                 *   ，如果hiHead为null，就表示当前红黑树进行重新与运算之后，都是在低位，高位没有树节点，这时候，直接tab[index] = loHead即可完成树的迁移
+                 */
                     tab[index] = loHead.untreeify(map);
                 else {
                     tab[index] = loHead;
+                    //如果hiHead为null， 表示迁移之后的红黑树节点都在低位lc,
+                    // 这时候，直接tab[index]=loHead即可完成树的迁移，如果不为null，就表示高位有树节点，低位也有树节点，需要分别进行树的转换
                     if (hiHead != null) // (else is already treeified)
                         loHead.treeify(tab);
                 }
@@ -2259,7 +2338,6 @@ public class HashMap<K,V> extends AbstractMap<K,V>
                 }
             }
         }
-
         /* ------------------------------------------------------------ */
         // Red-black tree methods, all adapted from CLR
 
