@@ -1033,7 +1033,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                     break;                   // no lock when adding to empty bin
             }
             /**
-             * 3.这里的f就是根据put的key计算得到的元素下标位置，如果hash值Wie-1，表示当前有其他线程正在进行扩容
+             * 3.这里的f就是根据put的key计算得到的元素下标位置，如果hash值为-1，表示当前有其他线程正在进行扩容
              * 如果有其他线程在扩容，那helpTransfer的意思是帮助另外一个线程去扩容
              */
             else if ((fh = f.hash) == MOVED)

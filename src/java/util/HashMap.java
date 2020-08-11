@@ -382,6 +382,12 @@ public class HashMap<K,V> extends AbstractMap<K,V>
     /**
      * Returns a power of two size for the given target capacity.
      */
+    /**
+     * hashmap在初始化的时候，会对程序员提供的size进行处理，处理为大于等于当前值的2的n次方
+     * 就是说，如果指定的初始化大小是17，那么hashmap的初始化大小是32，就是经过下面这个方法来处理的
+     * @param cap
+     * @return
+     */
     static final int tableSizeFor(int cap) {
         int n = cap - 1;
         n |= n >>> 1;
@@ -660,6 +666,9 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      *     3.3.2 如果在遍历链表的过程中，发现了key相等的元素，表示当前要插入的key，在链表中，有对应的key存在，直接覆盖即可
      *     3.3.3 如果插入到链表尾部之后，需要判断链表长度是否超过阀值，超过，就进行树化
      *
+     * Node<K,V> p：
+     * Node<K,V> e：被覆盖的old元素
+     *
      */
     final V putVal(int hash, K key, V value, boolean onlyIfAbsent,
                    boolean evict) {
@@ -697,9 +706,9 @@ public class HashMap<K,V> extends AbstractMap<K,V>
                     p = e;
                 }
             }
+            // e不为null，就表示当前put的key将某个已存在的值覆盖了
             if (e != null) { // existing mapping for key
                 V oldValue = e.value;
-                //最后判断是否需要扩容
                 if (!onlyIfAbsent || oldValue == null)
                     e.value = value;
                 afterNodeAccess(e);
@@ -707,6 +716,7 @@ public class HashMap<K,V> extends AbstractMap<K,V>
             }
         }
         ++modCount;
+        // 判断是否需要扩容
         if (++size > threshold)
             resize();
         afterNodeInsertion(evict);
@@ -754,7 +764,9 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      */
     final Node<K,V>[] resize() {
         Node<K,V>[] oldTab = table;
+        //原数据长度
         int oldCap = (oldTab == null) ? 0 : oldTab.length;
+        //原阀值长度
         int oldThr = threshold;
         int newCap, newThr = 0;
         if (oldCap > 0) {
@@ -807,6 +819,10 @@ public class HashMap<K,V> extends AbstractMap<K,V>
                         do {
                             next = e.next;
                             if ((e.hash & oldCap) == 0) {
+                                /**
+                                 * 如果链表尾节点是null，就表示当前链表是空，将当前元素e设置为队头head
+                                 * 如果链表尾部不是null，就表示链表中已经有数据了，就将队尾的next设置为e，并且将e设置为队尾
+                                 */
                                 if (loTail == null)
                                     loHead = e;
                                 else

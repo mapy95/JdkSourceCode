@@ -153,6 +153,16 @@ import java.util.concurrent.locks.AbstractQueuedSynchronizer;
  * @since 1.5
  * @author Doug Lea
  */
+
+/**
+ * CountDownLatch的核心思想：
+ *  主线程通过await()方法，在计数值不为0的时候，将主线程阻塞，并放到等待队列中，在最后一个线程将计数值改为0的时候，去唤醒等待队列中的主线程
+ *  可以理解为：在countDownLatch中，等待对象中是阻塞的队列，只有在计数值变为0的时候，才会被唤醒
+ *
+ *  通过await()方法来阻塞主线程，只有在state变为0的时候，才执行主线程中的代码
+ *  countDownLatch()方法用来将计数值 - 1；如果-1之后的值为0，就尝试唤醒阻塞队列中的线程
+ *
+ */
 public class CountDownLatch {
     /**
      * Synchronization control For CountDownLatch.
@@ -169,10 +179,23 @@ public class CountDownLatch {
             return getState();
         }
 
+        /**
+         * 在调用await()方法的时候，会进入到该判断中，如果当前state的值是0，就无需阻塞，可执行
+         * 如果不为0，就加入到阻塞队列中，直到state为0的时候，被唤醒
+         * @param acquires
+         * @return
+         */
         protected int tryAcquireShared(int acquires) {
             return (getState() == 0) ? 1 : -1;
         }
 
+        /**
+         * 在调用countDown()方法的时候，会调用到这里：
+         *  将当前AQS的state值 - 1
+         *  如果 -1之后的值等于0，就尝试唤醒阻塞队列中的线程
+         * @param releases
+         * @return
+         */
         protected boolean tryReleaseShared(int releases) {
             // Decrement count; signal when transition to zero
             for (;;) {

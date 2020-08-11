@@ -286,6 +286,10 @@ import sun.misc.Unsafe;
  * @since 1.5
  * @author Doug Lea
  */
+
+/**
+ * aqs是并发锁的基础，AQS使用了模板方法模式,将方法执行的顺序在父类中进行了编排，由子类来实现
+ */
 public abstract class AbstractQueuedSynchronizer
     extends AbstractOwnableSynchronizer
     implements java.io.Serializable {
@@ -1442,7 +1446,7 @@ public abstract class AbstractQueuedSynchronizer
         if (Thread.interrupted())
             throw new InterruptedException();
         if (tryAcquireShared(arg) < 0)
-            doAcquireSharedInterruptibly(arg);
+        doAcquireSharedInterruptibly(arg);
     }
 
     /**

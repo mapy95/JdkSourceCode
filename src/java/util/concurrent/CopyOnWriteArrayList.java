@@ -619,6 +619,13 @@ public class CopyOnWriteArrayList<E>
      * A version of addIfAbsent using the strong hint that given
      * recent snapshot does not contain e.
      */
+    /**
+     * 这是copyOnWriteArraySet工具类在add的时候，调用的方法
+     * CopyOnWriteArraySet底层是一个CopyOnWriteArrayList
+     * @param e
+     * @param snapshot
+     * @return
+     */
     private boolean addIfAbsent(E e, Object[] snapshot) {
         final ReentrantLock lock = this.lock;
         lock.lock();

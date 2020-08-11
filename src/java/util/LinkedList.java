@@ -137,6 +137,12 @@ public class LinkedList<E>
     /**
      * Links e as last element.
      */
+    /**
+     * 添加到链表尾部
+     *  1.如果链表尾部的节点last为null，就表示当前链表为空，当前要插入的元素，就是first，也是last
+     *  2.如果链表尾部的节点last不为null，就将当前要插入的节点的prev设置为last，将last的next设置为node即可
+     * @param e
+     */
     void linkLast(E e) {
         final Node<E> l = last;
         final Node<E> newNode = new Node<>(l, e, null);
@@ -151,6 +157,15 @@ public class LinkedList<E>
 
     /**
      * Inserts element e before non-null Node succ.
+     */
+    /**
+     * 添加到指定元素的前面，
+     *  这个方法是将e添加到succ前面
+     *  如果succ是头结点，就将newNode设置为first
+     *  如果不是，就将succ上一个节点i的next指向newNode，newnode的prev指向i，同时将succ的prev指向newNode，将newNode的next指向succ
+     *
+     * @param e
+     * @param succ
      */
     void linkBefore(E e, Node<E> succ) {
         // assert succ != null;
@@ -334,6 +349,11 @@ public class LinkedList<E>
      * @param e element to be appended to this list
      * @return {@code true} (as specified by {@link Collection#add})
      */
+    /**
+     * add(e):默认是将元素添加到链表尾部
+     * @param e
+     * @return
+     */
     public boolean add(E e) {
         linkLast(e);
         return true;
@@ -503,6 +523,13 @@ public class LinkedList<E>
      * @param element element to be inserted
      * @throws IndexOutOfBoundsException {@inheritDoc}
      */
+    /**
+     * 在指定位置插入元素
+     *  如果当前要插入的位置，等于链表长度，那就加入到链表尾部
+     *  否则的话，就查找到未插入之前 index位置的节点temp，并在temp前面插入element
+     * @param index
+     * @param element
+     */
     public void add(int index, E element) {
         checkPositionIndex(index);
 
@@ -563,6 +590,13 @@ public class LinkedList<E>
     /**
      * Returns the (non-null) Node at the specified element index.
      */
+    /**
+     * 判断要插入的位置index位于链表的前半部分还是后半部分
+     *  如果是在前半部分，就从first开始遍历，依次遍历，找到原链表中，index位置的节点，并返回
+     *  如果是在后半部分，就从尾部开始遍历
+     * @param index
+     * @return
+     */
     Node<E> node(int index) {
         // assert isElementIndex(index);
 
@@ -570,6 +604,7 @@ public class LinkedList<E>
             Node<E> x = first;
             for (int i = 0; i < index; i++)
                 x = x.next;
+
             return x;
         } else {
             Node<E> x = last;

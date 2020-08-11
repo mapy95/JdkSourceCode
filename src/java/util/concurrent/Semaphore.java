@@ -153,6 +153,31 @@ import java.util.concurrent.locks.AbstractQueuedSynchronizer;
  * @since 1.5
  * @author Doug Lea
  */
+
+/**
+ * semaphore的核心思想：
+ *  semaphore是用来抢占资源的，A抢占到资源之后，只有释放掉，B才可以继续获取
+ *
+ *  semaphore维护了一个公平锁和非公平锁
+ *  在初始化时，会把aqs的state设置为构造函数中的初始值
+ *
+ *  1.acquire():是用来抢占资源的(简单而言，就是加锁的)
+ *    1.1 如果不指定参数，默认抢占一个资源
+ *      如果是公平锁，会先调用hasQueuedPredecessors()方法，判断当前线程是否需要排队
+ *      非公平锁，会直接尝试抢占资源
+ *
+ *    1.2 抢占资源，就是将state的值减1，然后将-1之后的值，通过cas写入内存中；
+ *      如果-1之后的值，依旧 >= 0；就无需排队;如果当前线程-1之后，state<0;那就 表示当前资源已经用完，需要排队
+ *    1.3 排队
+ *      在排队的时候，会生成一个新的node节点，将node节点添加到链表中
+ *      然后，判断当前节点的头结点是否是head节点；如果是head节点，表示自己是第一个来排队的线程，就尝试加一次锁(抢占一次资源)；如果获取到资源了，就无需排队，return即可
+ *      如果未获取到资源，就将头节点的waitStatus设置为-1，然后park();等待唤醒
+ *
+ *  2.release()方法：是用来释放资源的
+ *      释放资源也简单，将state + 1，然后将+1之后的值，通过cas写入内存
+ *      如果cas成功，就唤醒第一个排队的节点。即：head.next
+ *
+ */
 public class Semaphore implements java.io.Serializable {
     private static final long serialVersionUID = -3222578661600680210L;
     /** All mechanics via AbstractQueuedSynchronizer subclass */

@@ -220,6 +220,13 @@ public class ArrayList<E> extends AbstractList<E>
         }
     }
 
+    /**
+     * 对于第一次添加元素时，如果数组为空，就会在这里初始化数组大小，为10
+     * 如果是第二次添加元素，由于此时elementData不为null，就会返回size+1对应的值
+     * @param elementData
+     * @param minCapacity
+     * @return
+     */
     private static int calculateCapacity(Object[] elementData, int minCapacity) {
         if (elementData == DEFAULTCAPACITY_EMPTY_ELEMENTDATA) {
             return Math.max(DEFAULT_CAPACITY, minCapacity);
@@ -231,6 +238,11 @@ public class ArrayList<E> extends AbstractList<E>
         ensureExplicitCapacity(calculateCapacity(elementData, minCapacity));
     }
 
+    /**
+     * 返回对应的数组中元素的个数，如果个数小于数组元素的length，就无需扩容，在外面，直接将elementData[size++] = e 即可完成元素的插入
+     * 如果超过了数组大小，就需要进行扩容
+     * @param minCapacity
+     */
     private void ensureExplicitCapacity(int minCapacity) {
         modCount++;
 
@@ -252,6 +264,13 @@ public class ArrayList<E> extends AbstractList<E>
      * number of elements specified by the minimum capacity argument.
      *
      * @param minCapacity the desired minimum capacity
+     */
+    /**
+     * 扩容：
+     *  1.获取到原数组长度，扩容是原数组的1.5倍
+     *  2.如果新数组满足长度的校验，就将原数组的内容copy到新的数组中，底层调用的是
+     *  System.arraycopy(original, 0, copy, 0, Math.min(original.length, newLength));
+     * @param minCapacity
      */
     private void grow(int minCapacity) {
         // overflow-conscious code
@@ -473,15 +492,21 @@ public class ArrayList<E> extends AbstractList<E>
      * @param element element to be inserted
      * @throws IndexOutOfBoundsException {@inheritDoc}
      */
-    public void add(int index, E element) {
-        rangeCheckForAdd(index);
+    /**
+ * 在指定位置添加元素，和add(e)的区别是：
+ *  该方法会在判断是否需要扩容之后，将原数组中i 到last位置的元素，拷贝到i+1 到last的位置，然后将i位置赋值为e
+ * @param index
+ * @param element
+ */
+public void add(int index, E element) {
+    rangeCheckForAdd(index);
 
-        ensureCapacityInternal(size + 1);  // Increments modCount!!
-        System.arraycopy(elementData, index, elementData, index + 1,
-                         size - index);
-        elementData[index] = element;
-        size++;
-    }
+    ensureCapacityInternal(size + 1);  // Increments modCount!!
+    System.arraycopy(elementData, index, elementData, index + 1,
+            size - index);
+    elementData[index] = element;
+    size++;
+}
 
     /**
      * Removes the element at the specified position in this list.
@@ -491,6 +516,15 @@ public class ArrayList<E> extends AbstractList<E>
      * @param index the index of the element to be removed
      * @return the element that was removed from the list
      * @throws IndexOutOfBoundsException {@inheritDoc}
+     */
+    /**
+     * 移除指定位置的元素：
+     *  1.校验index是否符合要求
+     *  2.判断当前是否是最后一个元素。size - index - 1 如果等于0，就是最后一个元素
+     *      2.1 如果是最后一个元素，就将最后一位设置为null即可
+     *      2.2 如果不是最后一位，将index +1到最后一个元素，拷贝到index到最后一位元素  这样，就把原index位置的元素移到了最后一位
+     * @param index
+     * @return
      */
     public E remove(int index) {
         rangeCheck(index);
@@ -519,6 +553,13 @@ public class ArrayList<E> extends AbstractList<E>
      *
      * @param o element to be removed from this list, if present
      * @return <tt>true</tt> if this list contained the specified element
+     */
+    /**
+     * 移除指定元素的时候，都会依次遍历所有对象，只是，需要区分出来，当前要移除的对象是null，还是普通的object对象
+     * 在找到之后，remove的时候，也是一样的操作，将i+1到最后一位元素，移动到i 到最后一位，将原来i位置的元素放到最后一个位置，然后直接将
+     * 最后一个位置的元素设置为null，即可
+     * @param o
+     * @return
      */
     public boolean remove(Object o) {
         if (o == null) {

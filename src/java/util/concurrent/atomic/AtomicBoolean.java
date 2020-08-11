@@ -46,6 +46,11 @@ import sun.misc.Unsafe;
  *
  * @since 1.5
  * @author Doug Lea
+ *
+ * JUC包括三个包
+ * java.util.concurrent.atomic
+ * java.util.concurrent.locks
+ * java.util.concurrent
  */
 public class AtomicBoolean implements java.io.Serializable {
     private static final long serialVersionUID = 4654671469794556979L;
@@ -81,6 +86,7 @@ public class AtomicBoolean implements java.io.Serializable {
      * Returns the current value.
      *
      * @return the current value
+     * 返回当前值
      */
     public final boolean get() {
         return value != 0;
@@ -94,6 +100,7 @@ public class AtomicBoolean implements java.io.Serializable {
      * @param update the new value
      * @return {@code true} if successful. False return indicates that
      * the actual value was not equal to the expected value.
+     * cas:更新boolean值
      */
     public final boolean compareAndSet(boolean expect, boolean update) {
         int e = expect ? 1 : 0;

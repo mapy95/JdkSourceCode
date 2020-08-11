@@ -103,6 +103,15 @@ import java.util.Collection;
  * @since 1.5
  * @author Doug Lea
  */
+
+/**
+ * reentrantLock是一个可重入锁，在内部，分为了公平锁和非公平锁的实现
+ *  在初始化对象的时候，如果不指定，默认是非公平锁
+ *
+ * 公平锁：
+ *
+ *
+ */
 public class ReentrantLock implements Lock, java.io.Serializable {
     private static final long serialVersionUID = 7373984872572414699L;
     /** Synchronizer providing all implementation mechanics */
