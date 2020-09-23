@@ -89,6 +89,12 @@ import sun.misc.SharedSecrets;
  * @author Doug Lea
  * @param <E> the type of elements held in this collection
  */
+
+/**
+ * 核心思想是：
+ * 在并发读取数据时，不加锁，在update/insert/delete的时候，加锁，在更新list之后，将最新的list覆盖原始的list集合
+ * @param <E>
+ */
 public class CopyOnWriteArrayList<E>
     implements List<E>, RandomAccess, Cloneable, java.io.Serializable {
     private static final long serialVersionUID = 8673264195747942595L;
@@ -97,6 +103,9 @@ public class CopyOnWriteArrayList<E>
     final transient ReentrantLock lock = new ReentrantLock();
 
     /** The array, accessed only via getArray/setArray. */
+    /**
+     * 这里定义的是volatile的，保证了对多线程的可见
+     */
     private transient volatile Object[] array;
 
     /**
@@ -402,6 +411,7 @@ public class CopyOnWriteArrayList<E>
      * specified element.
      *
      * @throws IndexOutOfBoundsException {@inheritDoc}
+     * 这是直接覆盖index位置的元素
      */
     public E set(int index, E element) {
         final ReentrantLock lock = this.lock;
@@ -430,6 +440,10 @@ public class CopyOnWriteArrayList<E>
      *
      * @param e element to be appended to this list
      * @return {@code true} (as specified by {@link Collection#add})
+     *
+     * 在往list中添加元素的时候，加锁，也就是说，如果有并发add数据，只会有一个加锁成功，
+     * 然后将原始array拷贝到新的数组中，将要插入的值，添加到新数组中，添加完毕之后，
+     * 用新数组覆盖原来的数组对象
      */
     public boolean add(E e) {
         final ReentrantLock lock = this.lock;
@@ -452,6 +466,9 @@ public class CopyOnWriteArrayList<E>
      * any subsequent elements to the right (adds one to their indices).
      *
      * @throws IndexOutOfBoundsException {@inheritDoc}
+     *
+     * 指定下标位置的这个方法：核心思想是不变的，只是在将原数组拷贝到新数组的时候，会把index该位置的元素预留下来，等拷贝完成之后，
+     * 直接将元素值，添加到新数组的index位置
      */
     public void add(int index, E element) {
         final ReentrantLock lock = this.lock;
@@ -485,6 +502,11 @@ public class CopyOnWriteArrayList<E>
      * indices).  Returns the element that was removed from the list.
      *
      * @throws IndexOutOfBoundsException {@inheritDoc}
+     *
+     * 在从数组中移除数据的时候，需要加锁
+     *  如果移除的是最后一位，就直接将0到len-1位置的元素，放到新的数组中，即可
+     *  否则的话，将0到index位置的元素，先添加到新的数组中，然后再将index+1到len位置的元素添加到新数组中
+     *  这样，就把index位置的元素移除了
      */
     public E remove(int index) {
         final ReentrantLock lock = this.lock;
@@ -494,6 +516,9 @@ public class CopyOnWriteArrayList<E>
             int len = elements.length;
             E oldValue = get(elements, index);
             int numMoved = len - index - 1;
+            /**
+             * 如果删除的是最后一个元素
+             */
             if (numMoved == 0)
                 setArray(Arrays.copyOf(elements, len - 1));
             else {
@@ -538,6 +563,9 @@ public class CopyOnWriteArrayList<E>
         try {
             Object[] current = getArray();
             int len = current.length;
+            /**
+             * 只有在前面获取到的数组集合和在这个方法中获取到的数组集合不一致的时候，才会进入到这个方法，进行判断
+             */
             if (snapshot != current) findIndex: {
                 int prefix = Math.min(index, len);
                 for (int i = 0; i < prefix; i++) {
@@ -633,6 +661,12 @@ public class CopyOnWriteArrayList<E>
             Object[] current = getArray();
             int len = current.length;
             if (snapshot != current) {
+                /**
+                 * 如果CopyOnWriteSet获取到的集合副本和实际的集合不一样，
+                 * 取另两个集合较小的一方对应的length
+                 * 依次遍历
+                 * 判断当前要添加的元素e，是否已经存在于集合中，如果已经存在，就返回false，无需插入
+                 */
                 // Optimize for lost race to another addXXX operation
                 int common = Math.min(snapshot.length, len);
                 for (int i = 0; i < common; i++)
@@ -641,6 +675,9 @@ public class CopyOnWriteArrayList<E>
                 if (indexOf(e, current, common, len) >= 0)
                         return false;
             }
+            /**
+             * 否则的话，就将当前数组+1，并且将e赋值到最后一个元素位置
+             */
             Object[] newElements = Arrays.copyOf(current, len + 1);
             newElements[len] = e;
             setArray(newElements);

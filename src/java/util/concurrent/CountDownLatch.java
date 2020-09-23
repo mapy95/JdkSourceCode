@@ -155,13 +155,17 @@ import java.util.concurrent.locks.AbstractQueuedSynchronizer;
  */
 
 /**
+ * CountDownLatch是做减法
  * CountDownLatch的核心思想：
  *  主线程通过await()方法，在计数值不为0的时候，将主线程阻塞，并放到等待队列中，在最后一个线程将计数值改为0的时候，去唤醒等待队列中的主线程
- *  可以理解为：在countDownLatch中，等待对象中是阻塞的队列，只有在计数值变为0的时候，才会被唤醒
+ *  可以理解为：在countDownLatch中，等待队列中是阻塞的队列，只有在计数值变为0的时候，才会被唤醒
  *
  *  通过await()方法来阻塞主线程，只有在state变为0的时候，才执行主线程中的代码
  *  countDownLatch()方法用来将计数值 - 1；如果-1之后的值为0，就尝试唤醒阻塞队列中的线程
  *
+ *  CountDownLatch在初始化的时候，会初始化一个aqs队里，队列中的state标志位为指定的数量(感觉类似于重入锁)
+ *  调用await()的时候，会判断当前state是否为0，为0则不阻塞，否则的话，将线程加入到队列中
+ *  调用countDown()的时候，会将state-1，如果-1之后，是0，就尝试唤醒在阻塞中的主线程（也就是刚才调用await时等待的线程）
  */
 public class CountDownLatch {
     /**
@@ -192,7 +196,8 @@ public class CountDownLatch {
         /**
          * 在调用countDown()方法的时候，会调用到这里：
          *  将当前AQS的state值 - 1
-         *  如果 -1之后的值等于0，就尝试唤醒阻塞队列中的线程
+         *  如果未减1之前，state已经是0了，就直接返回false(表示这时候已经被其他线程唤醒了)，阻塞
+         *  如果 -1之后的值等于0，就返回true，就尝试唤醒阻塞队列中的线程
          * @param releases
          * @return
          */
@@ -249,6 +254,7 @@ public class CountDownLatch {
      *
      * @throws InterruptedException if the current thread is interrupted
      *         while waiting
+     *
      */
     public void await() throws InterruptedException {
         sync.acquireSharedInterruptibly(1);

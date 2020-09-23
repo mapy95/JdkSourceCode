@@ -177,6 +177,11 @@ import java.util.concurrent.locks.AbstractQueuedSynchronizer;
  *      释放资源也简单，将state + 1，然后将+1之后的值，通过cas写入内存
  *      如果cas成功，就唤醒第一个排队的节点。即：head.next
  *
+ *
+ * 所以：一句话总结semaphore的用法：
+ *  1.在初始化的时候，指定资源的大小N，也就是说，只能有N个线程来同时抢占到这几个资源，其他的线程阻塞，加入到等待队列中
+ *  2.acquire()来抢占资源，如果抢占到（-1之后的state不小于0），就无需等待，可以执行业务代码，如果未抢占到（-1之后的state < 0 ），就加入到aqs队列中，并将前一个等待线程的waitState设置为-1
+ *  3.release()会释放资源：也就是将state + 1；然后将等待队列中的第一个等待的线程唤醒
  */
 public class Semaphore implements java.io.Serializable {
     private static final long serialVersionUID = -3222578661600680210L;

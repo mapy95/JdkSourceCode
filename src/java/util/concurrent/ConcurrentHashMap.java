@@ -264,6 +264,16 @@ import java.util.stream.Stream;
  * @param <K> the type of keys maintained by this map
  * @param <V> the type of mapped values
  */
+
+/**
+ * 在jdk8中，concurrentHashMap是由CAS+synchronized实现的
+ * jdk7中，是分段锁来实现的
+ *
+ * 在1.8中，synchronized锁的是当前节点（也就是当前要remove或者set的数组下标对应的node节点）
+ *
+ * @param <K>
+ * @param <V>
+ */
 public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
     implements ConcurrentMap<K,V>, Serializable {
     private static final long serialVersionUID = 7249069246763182397L;
@@ -791,6 +801,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
      * when table is null, holds the initial table size to use upon
      * creation, or 0 for default. After initialization, holds the
      * next element count value upon which to resize the table.
+     * 这个参数是用来指定数组的容量的
      */
     private transient volatile int sizeCtl;
 
@@ -832,6 +843,11 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
      * sizing to accommodate this many elements.
      * @throws IllegalArgumentException if the initial capacity of
      * elements is negative
+     */
+    /**
+     * 在初始化的时候，如果指定了数组大小，就会根据数组大小，找到最近的2的幂次方
+     * 比如：传的是13，那就会找到16
+     * @param initialCapacity
      */
     public ConcurrentHashMap(int initialCapacity) {
         if (initialCapacity < 0)
@@ -1026,7 +1042,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
             Node<K,V> f; int n, i, fh;
             if (tab == null || (n = tab.length) == 0)
                 tab = initTable();
-            //2.如果tab不为空，就根据key计算出一个下标值，判断数组中这个位置是否为null，为null，就new一个新的node节点，通过cas设置到该数组元素中
+            //2.如果tab不为空，就根据key计算出一个下标值，判断数组中这个位置是否为null，为null，就new一个新的node节点，通过cas设置到该数组对应的元素中
             else if ((f = tabAt(tab, i = (n - 1) & hash)) == null) {
                 if (casTabAt(tab, i, null,
                              new Node<K,V>(hash, key, value, null)))
@@ -1045,21 +1061,20 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                     /**
                      * 4.1 先通过synchronized加锁
                      * 4.2 然后再判断当前i这个位置是否是f节点，因为有可能当前线程在执行的时候，其他线程修改了数组中i位置对应的结点信息
-                     * 4.3 如果hashCode大于0，表示这是一个链表
+                     * 4.3 如果hashCode大于等于0，表示这是一个链表
                      *   4.3.1 从头结点开始循环，如果找到key相同的node结点，就把值放到oldVal,然后value覆盖原来的value
                      *   4.3.2 如果到最后一个结点，还没有找到key相等的，就插入到队尾
                      * 4.4 如果当前node结点是TreeBin类型的，那就是树
                      *
                      * 4.5 如果bigCount大于0，且大于链表转红黑树的阈值，就进行树的转换
                      * 如果oldValue不为null，表示是值覆盖，就返回oldValue
-                     *
-                     *
                      */
                     if (tabAt(tab, i) == f) {
                         if (fh >= 0) {
                             binCount = 1;
                             for (Node<K,V> e = f;; ++binCount) {
                                 K ek;
+                                //这里的if判断，是进行覆盖操作
                                 if (e.hash == hash &&
                                     ((ek = e.key) == key ||
                                      (ek != null && key.equals(ek)))) {
@@ -1069,6 +1084,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                                     break;
                                 }
                                 Node<K,V> pred = e;
+                                //如果遍历到尾结点还是没有查到相同的key，就插入到尾结点的后面
                                 if ((e = e.next) == null) {
                                     pred.next = new Node<K,V>(hash, key,
                                                               value, null);
@@ -1076,6 +1092,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                                 }
                             }
                         }
+                        // 如果当前元素存储的是红黑树
                         else if (f instanceof TreeBin) {
                             Node<K,V> p;
                             binCount = 2;
@@ -2257,7 +2274,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
             /**
              * sizeCtl第一次进来的时候是0，会走else的逻辑
              * else判断条件中，会通过cas将sizeCtl设置为-1，相当于是加锁了，如果第二个线程来初始化，会发现sizeCtl小于0，线程就会yield()
-             *
+             * 因为当sizeCtl为-1的时候，表示有线程正在对数据进行扩容
              */
             if ((sc = sizeCtl) < 0)
                 Thread.yield(); // lost initialization race; just spin
@@ -2289,6 +2306,11 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
      *
      * @param x the count to add
      * @param check if <0, don't check resize, if <= 1 only check if uncontended
+     */
+    /**
+     * 这里的check为1：表示链表；2：表示红黑树
+     * @param x
+     * @param check
      */
     private final void addCount(long x, int check) {
         CounterCell[] as; long b, s;
@@ -2644,6 +2666,11 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
     /**
      * Replaces all linked nodes in bin at given index unless table is
      * too small, in which case resizes instead.
+     */
+    /**
+     * 对链表进行树化，index是要树化的链表对应的数组下标
+     * @param tab
+     * @param index
      */
     private final void treeifyBin(Node<K,V>[] tab, int index) {
         Node<K,V> b; int n, sc;

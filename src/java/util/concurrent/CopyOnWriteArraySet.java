@@ -93,6 +93,13 @@ import java.util.function.Consumer;
  * @author Doug Lea
  * @param <E> the type of elements held in this collection
  */
+
+/**
+ * CopyOnWriteArraySet底层使用的是CopyOnWriteArrayList
+ * copyOnWriteArraySet在添加元素的时候，会判断下当前元素是否已经存在于集合中，如果存在，返回false
+ *
+ * @param <E>
+ */
 public class CopyOnWriteArraySet<E> extends AbstractSet<E>
         implements java.io.Serializable {
     private static final long serialVersionUID = 5457747651344034263L;

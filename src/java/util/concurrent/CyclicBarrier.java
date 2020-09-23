@@ -135,6 +135,8 @@ import java.util.concurrent.locks.ReentrantLock;
  * @see CountDownLatch
  *
  * @author Doug Lea
+ *
+ * CyclicBarrier是做加法
  */
 public class CyclicBarrier {
     /**
@@ -194,6 +196,12 @@ public class CyclicBarrier {
 
     /**
      * Main barrier code, covering the various policies.
+     *
+     * 这里的timed如果调用await()方法的时候，默认是false
+     * 如果调用了await的时候，指定了超时时间，timed就是true
+     *
+     * 调用await指定超时时效和不指定的区别是：
+     * 如果指定了：在超过这个时效之后，还是没有
      */
     private int dowait(boolean timed, long nanos)
         throws InterruptedException, BrokenBarrierException,
@@ -203,21 +211,40 @@ public class CyclicBarrier {
         try {
             final Generation g = generation;
 
+            /**
+             * 如果 当前generation被中止 ，就抛出异常
+             */
             if (g.broken)
                 throw new BrokenBarrierException();
 
+            /**
+             * 如果线程被中断，唤醒所有的等待线程
+             */
             if (Thread.interrupted()) {
                 breakBarrier();
                 throw new InterruptedException();
             }
 
+            /**
+             * 将计数器 - 1
+             */
             int index = --count;
+            /**
+             * 如果await调用的次数达到了设置的阈值，就执行下面的run()方法
+             */
             if (index == 0) {  // tripped
                 boolean ranAction = false;
                 try {
                     final Runnable command = barrierCommand;
                     if (command != null)
                         command.run();
+                    /**
+                     * 执行完毕之后，会唤醒所有等待的线程
+                     * 并且会new 一个generation对象
+                     * 并将count计数重新设置为最初设置的阈值
+                     *
+                     * ranAction为true，表示正常执行完毕， 如果执行业务逻辑的时候，报错，这时候  ranAction应该还是true
+                     */
                     ranAction = true;
                     nextGeneration();
                     return 0;
@@ -228,8 +255,17 @@ public class CyclicBarrier {
             }
 
             // loop until tripped, broken, interrupted, or timed out
+            /**
+             * 如果-1之后的state不为0，就会进入到这里的for循环
+             */
             for (;;) {
                 try {
+                    /**
+                     * 如果调用await()时，指定了时间，这里time的就是true;如果没有指定超时时间，这里就是false，就会一直等待，直到
+                     * 阈值达到指定的数量时，就会唤醒所有阻塞的线程
+                     *
+                     * 如果指定了超时时间，那就等待响应的时间
+                     */
                     if (!timed)
                         trip.await();
                     else if (nanos > 0L)
@@ -249,9 +285,16 @@ public class CyclicBarrier {
                 if (g.broken)
                     throw new BrokenBarrierException();
 
+                /**
+                 * 如果generation已经创建了一个新的，就返回index
+                 */
                 if (g != generation)
                     return index;
 
+                /**
+                 * 如果设置了超时时间并且达到了超时时效，就停止CyclicBarrier，并且唤醒所有等待的线程
+                 * 并抛出异常
+                 */
                 if (timed && nanos <= 0L) {
                     breakBarrier();
                     throw new TimeoutException();
@@ -273,6 +316,9 @@ public class CyclicBarrier {
      * @param barrierAction the command to execute when the barrier is
      *        tripped, or {@code null} if there is no action
      * @throws IllegalArgumentException if {@code parties} is less than 1
+     *
+     * parties:只有达到这个值，才会执行barrierAction的代码
+     * 这里的count是来做计数的，在每次await的时候，是修改count的值，来判断什么时候，执行runnable,再count变为0的时候，就执行，执行完之后，再把count的值修改为parties
      */
     public CyclicBarrier(int parties, Runnable barrierAction) {
         if (parties <= 0) throw new IllegalArgumentException();
